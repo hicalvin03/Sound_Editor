@@ -4,9 +4,9 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
-#include "../include/load_WAV.h"
+#include "../libs/load_WAV.h"
 
-// Load a WAV file into buffer
+// Load a WAV file into buffer int16_t* dest.
 void wav_load(const char* filename, int16_t* dest){
     FILE* file = fopen(filename,"rb");
     
@@ -18,7 +18,7 @@ void wav_load(const char* filename, int16_t* dest){
     return;
 }
 
-// Create/write a WAV file from buffer
+// Create/write a WAV file with fname from buffer
 void wav_save(const char* fname, int16_t* src, size_t len){
     FILE* file = fopen(fname,"wb");
 

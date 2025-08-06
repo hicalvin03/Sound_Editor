@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "../libs/load_WAV.h"
+#include "../libs/array_int64.h"
 
 typedef struct chunk chunk;
 
@@ -69,12 +70,41 @@ size_t tr_length(sound_seg* seg) {
     return curr_len;
 }
 
-void tr_read(sound_seg* track, int16_t* dest, size_t pos, size_t len) { 
-    (void)track;
-    (void)dest;
-    (void)pos;
-    (void)len;
+void tr_read(sound_seg* track, int16_t* dest, size_t pos, size_t len) {  //
+    size_t total_len = tr_length(track); 
+    size_t last_index = pos+len;
+
+    if (pos >= total_len){
+        printf("pos is out of bounds!\n");
+        return;
+    }
+    else if (last_index > total_len){
+        len = total_len - pos;
+    }
+
+    size_t elem_trav = 0;
+    size_t dest_idx = 0;
+
+    chunk* curr = track->head_node;
+    while(curr != NULL){
+        size_t len_chunk = curr->len;
+        if (len_chunk+elem_trav <= pos){ //check if chunk is within read range
+            elem_trav += len_chunk;
+            curr = curr->next;
+            continue;
+        }
+
+        for (size_t j=0; j<len_chunk && dest_idx < len; j++){ //once in range update dest.
+            if (elem_trav >= pos){
+                dest[dest_idx] = curr->data[j];
+                dest_idx++;
+            }
+            elem_trav += 1;
+        }  
+        curr = curr->next;
+    }
     return;
+
 }
 
 void tr_write(sound_seg* track, int16_t* src, size_t pos, size_t len) {
@@ -142,11 +172,103 @@ bool tr_delete_range(sound_seg* track, size_t pos, size_t len) {
     return true;
 }
 
-char* tr_identify(sound_seg* target, sound_seg* ad){
-    (void)target;
-    (void)ad;
-    return NULL;
+
+char* solution_formatter(list_64t* solution){
+    int size = solution->size;
+
+    if (size == 0){ // when no elements return empty string.
+        char* empty_sol = malloc(1); 
+        if (empty_sol != NULL){
+            empty_sol[0]='\0';
+            return empty_sol;
+        }
+    }
+    size_t str_len= (size/2)*50+1; //each int64_t has a maxima of 20 digits so a pair of int64_t with , and \n will be < 45 len;
+    char* sol = malloc(str_len); // each char is 1 byte.
+
+    char* curr_chunk = sol; // point to specific chunk in sol we are inserting into. initally start of sol.
+    for (size_t i =0; i< size; i +=2){
+        if (i < size - 2) { // case less then last pair.
+            int bytes_inserted = sprintf(curr_chunk, "%ld,%ld\n", solution->data[i], solution->data[i+1]);
+            if (bytes_inserted < 0) {
+                free(sol);
+                return NULL;
+            }
+            curr_chunk += bytes_inserted;
+
+        } else {
+            // for the last pair we don't want \n at the end.
+            int bytes_inserted = sprintf(curr_chunk, "%ld,%ld", solution->data[i], solution->data[i+1]);
+            if (bytes_inserted < 0) {
+                free(sol);
+                return NULL;
+            }
+            curr_chunk += bytes_inserted;
+        }
+    }
+    return sol;
 }
+
+void convert_into_1array(sound_seg* track,int16_t* array){// converts ad sound_seg into 1 single int16 array(preping for dot_product);
+    
+    chunk* curr = track->head_node;
+    size_t array_idx = 0;
+    while(curr != NULL){
+        for(size_t i=0; i < curr->len; i++){
+            array[array_idx] = curr->data[i];
+            array_idx++;
+        }
+    }
+}
+
+// Returns a string containing <start>,<end> ad pairs in target
+char* tr_identify(sound_seg* target,sound_seg* ad){
+    size_t ad_len = tr_length(ad);
+    size_t target_len = tr_length(target);
+    int16_t* ad_array = malloc(ad_len * sizeof(int16_t));
+    int16_t* target_array = malloc(target_len * sizeof(int16_t));
+
+    convert_into_1array(ad,ad_array);
+    convert_into_1array(target,target_array);
+
+    list_64t* solution = malloc(sizeof(list_64t)); //using a int64_t dynamic array to store index counts. as int16_t is too small
+    init_int64_list(solution,100);
+    
+    double auto_correlation = dot_product(ad_array,ad_array,ad_len);
+
+    int64_t curr_idx = 0;
+
+    while(curr_idx +ad_len <= target_len){
+        double correlation = dot_product(target_array+curr_idx,ad_array,ad_len); // shift target array pointer to new chunk
+
+        double comparison_val = (correlation /auto_correlation) * 100.0;
+        if (comparison_val >= 95.0 && comparison_val <= 105.0){ //if theres a match add to sol and skip entire ad_len to ensure no overlap.
+            int size = solution->size;
+            insert_int64(solution,size,curr_idx);
+            insert_int64(solution,size+1,curr_idx + ad_len -1);
+            curr_idx += ad_len;
+        }
+        else{
+            curr_idx++;
+        }
+    }
+    char* final_solution = solution_formatter(solution);
+    free_int64_list(solution);
+    free(target_array);
+    free(ad_array);
+    
+    return final_solution;
+}
+
+double dot_product(int16_t* arr1,int16_t* arr2, size_t size){
+    double cumml_sum = 0;
+    for (size_t i =0; i<size; i++){
+        cumml_sum += (double)arr1[i]*(double)arr2[i];
+    }
+    return cumml_sum;
+}
+
+
 
 void tr_insert(sound_seg* src_track,
             sound_seg* dest_track,
@@ -164,11 +286,6 @@ void print_int16_array(const int16_t* arr, size_t len) {
         printf("%d ", arr[i]);
     }
     printf("\n");
-}
-
-void print_track(sound_seg* gogoltha){
-
-
 }
 
 void print_sound_seg(sound_seg* seg) {//prints the structure of sound_seg.
@@ -212,5 +329,8 @@ int main(){
     tr_write(obj,src3,6,1);
     print_sound_seg(obj);
     printf("length is %zu\n",tr_length(obj));
+    int16_t dest[7];
+    tr_read(obj,dest,0,7);
+    print_int16_array(dest,7);
 
 }
