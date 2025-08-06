@@ -59,8 +59,14 @@ void tr_destroy(sound_seg* obj) {
 }
 
 size_t tr_length(sound_seg* seg) {
-    (void)seg;
-    return (size_t)-1;
+    size_t curr_len;
+    chunk* curr_node = seg->head_node;
+    while(curr_node != NULL){
+        curr_len += curr_node->len;
+        curr_node = curr_node->next;
+    }
+
+    return curr_len;
 }
 
 void tr_read(sound_seg* track, int16_t* dest, size_t pos, size_t len) { 
@@ -107,6 +113,7 @@ void tr_write(sound_seg* track, int16_t* src, size_t pos, size_t len) {
 
             src_cpy += overlap_len;
             len -= overlap_len;
+            pos += overlap_len; // make pos shift to the current pos.
 
         }
         curr_node = curr_node->next;
@@ -204,5 +211,6 @@ int main(){
     tr_write(obj,src1,1,5);
     tr_write(obj,src3,6,1);
     print_sound_seg(obj);
+    printf("length is %zu\n",tr_length(obj));
 
 }
