@@ -7,6 +7,8 @@
 #include "../libs/load_WAV.h"
 #include "../libs/array_int64.h"
 
+double dot_product(int16_t* arr1,int16_t* arr2, size_t size);
+
 typedef struct chunk chunk;
 
 struct chunk {
@@ -267,17 +269,94 @@ double dot_product(int16_t* arr1,int16_t* arr2, size_t size){
     }
     return cumml_sum;
 }
+chunk* find_node_with_pos(chunk* head, size_t pos,int* local_index) { //returns the node and the index of where its located!
+    chunk* curr = head;
+    while (curr != NULL) {
+        if (pos >= curr->start_index && pos < curr->start_index + curr->len) {
+            *local_index = pos - curr->start_index;
+            return curr;
+        }
+        curr = curr->next;
+    }
+    printf("Pos not found within range");
+    return NULL;
+}
+
+chunk* split(chunk* node_2_split, size_t local_split_pos, bool right_contain){ // splits a chunk into 2 chunks which pt to same array s.t. local_split_pos is contained in the rhs
+
+    if (!right_contain){ //if we want left contain
+        local_split_pos = local_split_pos +1;
+    }
+
+    chunk* new_node = chunk_init(node_2_split->data + local_split_pos, node_2_split->start_index + local_split_pos,node_2_split->len - local_split_pos);
+    node_2_split->len = local_split_pos; //adjust our current chunk's data so it only stores up to the srcpos not inclusive
+    chunk* temp = node_2_split->next;
+    node_2_split->next = new_node;
+    new_node->next = temp;
+    
+    return new_node;
+}
+
+void split_dest_track(sound_seg* dest_track, size_t destpos){//setsup dest_track for inserting by splitting dest around insert.
+    
+    int local_index;
+    chunk* node = find_node_with_pos(dest_track->head_node,destpos,&local_index);
+    size_t len = node->len;
+    if (local_index == 0){//already split can just insert one before.
+        return;
+    }
+    else{
+        split(node,local_index,true);
+    }
+}
+
+void tr_insert(sound_seg* src_track,sound_seg* dest_track,size_t destpos, size_t srcpos, size_t len) {
+
+    size_t track_start = srcpos;
+    size_t track_end = srcpos + len - 1;
+
+    
+    chunk* curr_node = src_track->head_node;
+
+    while(curr_node != NULL) {
+        size_t chunk_start = curr_node->start_index;
+        size_t chunk_end = curr_node->start_index + curr_node->len - 1;
+        
+        // Check if overlap between insert_track range and chunk
+        if (track_start <= chunk_end && track_end >= chunk_start) { //case 0: skip if insert_track has zero overlap with curr_chunk
+            size_t overlap_start = (track_start > chunk_start) ? track_start : chunk_start;
+            size_t overlap_end = (track_end < chunk_end) ? track_end : chunk_end;
+
+            //srcpos <= curr_arr_st && curr_arr_ed <= end_insert
+            if (overlap_start == chunk_start && overlap_end == chunk_end){ //case 1: entire chunk is within insert_track region.
+
+                //change this to a parent node and add to a list and insert it later.
+                return;
+            }
+
+            else if (overlap_start > chunk_start && overlap_end == chunk_end){ //case 2: insert_track starts in middle of chunk.
+                chunk* new_node = split(curr_node, overlap_start, true);
+                //add new_node to a list and then insert it later. Also maybe update parents.
+                return;
+            }
+            else if (overlap_start == chunk_start && overlap_end < chunk_end){ //case 3 insert track ends in middle of our chunk. 
+                chunk* new_node = split(curr_node, overlap_end, false);
+                //add new_node to a list and then insert it later. Also maybe update parents.
+                return;
+            }
+
+            else if (overlap_start > chunk_start && overlap_end < chunk_end){ //case 4 entire track ends and starts in the middle of our chunk's array. |---\---\---|
+                chunk* left_new_node = split(curr_node, overlap_start, true);
+                chunk* right_new_node = split(left_new_node, overlap_end, false);
+
+                return;
+            }
+            
+        }
+        curr_node = curr_node->next;
+    }
 
 
-
-void tr_insert(sound_seg* src_track,
-            sound_seg* dest_track,
-            size_t destpos, size_t srcpos, size_t len) {
-    (void)src_track;
-    (void)dest_track;
-    (void)destpos;
-    (void)srcpos;
-    (void)len;
     return;
 }
 

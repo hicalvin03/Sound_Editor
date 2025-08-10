@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../include/array_int64.h"
+#include "../libs/array_int64.h"
 
 void init_int64_list(list_64t* list, int max_size){
     list->data = malloc(sizeof(int64_t)*max_size);
