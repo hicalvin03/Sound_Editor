@@ -1,3 +1,6 @@
+#ifndef CHUNK_LIST_H
+#define CHUNK_LIST_H
+
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -30,3 +33,4 @@ void free_chunk_list(chunk_list* list);
 chunk_list* shallow_copy_chunk_list(chunk_list* original);
 
 
+#endif

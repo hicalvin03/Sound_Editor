@@ -7,14 +7,10 @@
 #include "../libs/load_WAV.h"
 #include "../libs/array_int64.h"
 #include "../libs/chunk_list.h"
+#include "../libs/sound_seg.h"
 
 double dot_product(int16_t* arr1,int16_t* arr2, size_t size);
-
-typedef struct {
-    chunk* head_node;
-    size_t total_length;
-} sound_seg;
-
+ 
 sound_seg* tr_init() { //Creates heap memory for a new sound_seg track.
     sound_seg* new_track = malloc(sizeof(sound_seg));
     if (new_track == NULL){
@@ -144,6 +140,13 @@ bool tr_delete_range(sound_seg* track, size_t pos, size_t len) {
     (void)track;
     (void)pos;
     (void)len;
+
+
+
+
+
+
+    
     return true;
 }
 
@@ -258,20 +261,37 @@ chunk* find_node_with_pos(chunk* head, size_t pos,int* local_index, chunk** prev
 }
 
 
-chunk* split(chunk* node_2_split, size_t local_split_pos, bool right_contain){ // splits a chunk into 2 chunks which pt to same array s.t. local_split_pos is contained in the rhs
-
-    if (!right_contain){ //if we want left contain
-        local_split_pos = local_split_pos +1;
+chunk* split(chunk* node_2_split, size_t local_split_pos, bool right_contain) {
+    
+    size_t split_index;
+    if (right_contain) {
+        // Split position should be included in the RIGHT chunk
+        // So left chunk gets [0, local_split_pos), right gets [local_split_pos, end)
+        split_index = local_split_pos;
+    } else {
+        // Split position should be included in the LEFT chunk  
+        // So left chunk gets [0, local_split_pos], right gets [local_split_pos+1, end)
+        split_index = local_split_pos + 1;
     }
-
-    chunk* new_node = chunk_init(node_2_split->data + local_split_pos, node_2_split->start_index + local_split_pos,node_2_split->len - local_split_pos);
-    node_2_split->len = local_split_pos; //adjust our current chunk's data so it only stores up to the srcpos not inclusive
     
-    chunk* temp = node_2_split->next; //adds new_node to the track structure.
-    node_2_split->next = new_node;
-    new_node->next = temp;
+    // Create the new right chunk
+    chunk* new_right_chunk = chunk_init(
+        node_2_split->data + split_index,           
+        node_2_split->start_index + split_index,    
+        node_2_split->len - split_index          
+    );
+    node_2_split->len = split_index;
+    // Insert new_right_chunk into the linked list after the original chunk
+    chunk* temp = node_2_split->next;
+    node_2_split->next = new_right_chunk;
+    new_right_chunk->next = temp;
     
-    return new_node;
+    // Return the chunk that contains the split position
+    if (right_contain) {
+        return new_right_chunk; 
+    } else {
+        return node_2_split; 
+    }
 }
 
 chunk* split_dest_track(sound_seg* dest_track, size_t destpos){//setsup dest_track for inserting by splitting dest around insert. Returns prev_node
@@ -362,7 +382,9 @@ void tr_insert(sound_seg* src_track,sound_seg* dest_track,size_t destpos, size_t
 
             else if (overlap_start > chunk_start && overlap_end == chunk_end){ //case 2: insert_track starts in middle of chunk.
                 chunk* temp_next = curr_node->next;//store next so we can skip to the next unseen section of track.
-                chunk* new_node = split(curr_node, overlap_start, true);
+
+                size_t local_split_pos = overlap_start - chunk_start;
+                chunk* new_node = split(curr_node, local_split_pos, true);
                 chunk* insert_node = create_child_copy(new_node);
                 add_chunk(children_nodes,insert_node);
 
@@ -371,10 +393,10 @@ void tr_insert(sound_seg* src_track,sound_seg* dest_track,size_t destpos, size_t
                 //add new_node to a list and then insert it later. Also maybe update parents.
             }
             else if (overlap_start == chunk_start && overlap_end < chunk_end){ //case 3 insert track ends in middle of our chunk. 
-
-
                 chunk* temp_next = curr_node->next;
-                chunk* new_node = split(curr_node, overlap_end, false);
+
+                size_t local_split_pos = overlap_end - chunk_start;
+                chunk* new_node = split(curr_node, local_split_pos, false);
                 chunk* insert_node = create_child_copy(new_node);
                 add_chunk(children_nodes,insert_node);
 
@@ -384,8 +406,13 @@ void tr_insert(sound_seg* src_track,sound_seg* dest_track,size_t destpos, size_t
 
             else if (overlap_start > chunk_start && overlap_end < chunk_end){ //case 4 entire track ends and starts in the middle of our chunk's array. |---\---\---|
                 chunk* temp_next = curr_node->next;
-                chunk* left_new_node = split(curr_node, overlap_start, true);
-                split(left_new_node, overlap_end, false);
+
+                size_t local_split_start = overlap_start - chunk_start;
+                chunk* left_new_node = split(curr_node, local_split_start, true);
+                
+                size_t local_split_end = overlap_end - overlap_start;
+                split(left_new_node, local_split_end, false);
+                
                 chunk* insert_node_left = create_child_copy(left_new_node);
                 add_chunk(children_nodes,insert_node_left);
 
@@ -403,7 +430,9 @@ void tr_insert(sound_seg* src_track,sound_seg* dest_track,size_t destpos, size_t
     if (destpos == 0) {
         chunk* old_head = dest_track->head_node;
         chunk* last_chunk = connect_chunk_list(children_nodes, &dest_track->head_node, NULL);
-        last_chunk->next = old_head;
+        if (old_head != NULL){
+            last_chunk->next = old_head;
+        }
     } 
     else if (destpos < len_dest) {
         chunk* prev_node = split_dest_track(dest_track, destpos);
@@ -463,18 +492,4 @@ void print_sound_seg(sound_seg* seg) {//prints the structure of sound_seg.
 }
 
 
-int main(){
-    sound_seg* track1 = tr_init();
-    sound_seg* track2 = tr_init();
-    int16_t src[3] = {1,2,3};
-    int16_t src1[5] = {5,6,7,8,9};
-    int16_t src3[5] = {4,4,4,4,4};
-    tr_write(track1,src,0,3);
-    tr_write(track1,src3,3,5);
-    tr_write(track2,src1,0,5);
-    tr_insert(track1,track2,1,1,3);
 
-    print_sound_seg(track1);
-    print_sound_seg(track2);
-
-}
